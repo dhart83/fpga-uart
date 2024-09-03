@@ -1,0 +1,53 @@
+# Ignore Vivado-generated files
+*.log
+*.jou
+*.str
+*.xml
+*.xpr_bak
+*.wcfg
+*.wdb
+
+# Vivado-generated directories
+*.cache/
+*.hw/
+*.ip_user_files/
+*.runs/
+*.sim/
+*.srcs/
+*.ipdefs/
+*.ipconfig/
+*.Xil/
+
+# Ignore temporary files
+*.tmp
+*.backup
+
+# Ignore build artifacts
+*.dcp
+*.bit
+*.bin
+*.elf
+*.ltx
+
+# Ignore waveform files
+*.wcfg
+*.wdb
+*.vcd
+*.awf
+
+# Ignore macOS specific files
+.DS_Store
+
+# Ignore Windows specific files
+Thumbs.db
+
+# Ignore Python virtual environments if using Python scripts
+venv/
+__pycache__/
+*.pyc
+
+# Ignore build directories if used
+build/
+
+# Ignore VSCode settings
+*.vscode/
