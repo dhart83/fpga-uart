@@ -4,9 +4,14 @@
 
 This repository is intended to house a modular UART (Universal Asynchronous Receiver/Transmitter) implementation in VHDL. The goal is to create a reliable and configurable UART module suitable for various FPGA designs.
 
+## Features
+
+- [x] Configurable baud rates
+- [x] Configurable oversampling
+
 ## Features (Planned)
 
-- [ ] Configurable baud rates
+- [ ] Majority voting
 - [ ] Programmable character length (5, 6, 7, or 8 bit)
 - [ ] Parity options (even, odd, or no parity)
 - [ ] Stop bits (1, 1.5, or 2 stop bits)
