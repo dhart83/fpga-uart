@@ -1,4 +1,4 @@
-----------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------
 -- Module Name    : baud_gen
 --
 --
@@ -18,13 +18,19 @@
 --                  460800	                2,170	                  217
 --                  921600	                1,085	                  109
 --
--- 
--- Inputs         : clk         - System clock input.
---                  rst_n       - Active-low reset signal.
---                  clk_en      - Input to enable/disable baud pulse (out baud_tick)
---                  baud_select - Input for selecting the baud rate (can be configured via switches).
 --
--- Outputs        : baud_tick   - A single-cycle pulse that occurs at the desired baud rate.
+-- Generics       : G_CLK_FREQ    - System clock frequency
+--                  G_OS_FACTOR   - Oversampling factor
+-- 
+--
+-- Inputs         : i_clk         - System clock input.
+--                  i_rst_n       - Active-low reset signal.
+--                  i_clk_en      - Input to enable/disable baud pulse (out o_baud_tick)
+--                  i_baud_sel    - Input for selecting the baud rate (can be configured via switches).
+--
+--
+-- Outputs        : o_baud_tick   - A single-cycle pulse that occurs at the desired baud rate.
+--                  o_sample_tick - A single-cycle pulse that occurs at the desired sample rate.
 --
 --
 -- Author         : Don Hartman
@@ -32,85 +38,139 @@
 --
 --
 -- Revision       : v1.0   - 09/02/2024  - Initial version
-----------------------------------------------------------------------------------
+--                  v1.1   - 09/03/2024  - Added an oversampling pulse output
+------------------------------------------------------------------------------------------------------
 
 
 library ieee;
 use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 
 
 entity baud_gen is
   generic (
-    CLK_FREQ : integer := 100_000_000
+    G_CLK_FREQ  : integer := 100_000_000;
+    G_OS_FACTOR : integer := 16
   );
   port (
-    clk         : in  std_logic;
-    rst_n       : in  std_logic;
-    clk_en      : in  std_logic;
-    baud_sel    : in  std_logic_vector(2 downto 0); -- Example: 3 bits for baud rate selection
-    baud_tick   : out std_logic
+    i_clk         : in  std_logic;
+    i_rst_n       : in  std_logic;
+    i_clk_en      : in  std_logic;
+    i_baud_sel    : in  std_logic_vector(2 downto 0); -- Example: 3 bits for baud rate selection
+    o_baud_tick   : out std_logic;
+    o_sample_tick : out std_logic
   );
 end entity baud_gen;
 
 
 architecture Behavioral of baud_gen is
 
+  constant C_BAUD_PERIOD_9600    : integer := G_CLK_FREQ /    9_600;
+  constant C_BAUD_PERIOD_19200   : integer := G_CLK_FREQ /   19_200;
+  constant C_BAUD_PERIOD_38400   : integer := G_CLK_FREQ /   38_400;
+  constant C_BAUD_PERIOD_57600   : integer := G_CLK_FREQ /   57_600;
+  constant C_BAUD_PERIOD_115200  : integer := G_CLK_FREQ /  115_200;
+  constant C_BAUD_PERIOD_230400  : integer := G_CLK_FREQ /  230_400;
+  constant C_BAUD_PERIOD_460800  : integer := G_CLK_FREQ /  460_800;
+  constant C_BAUD_PERIOD_921600  : integer := G_CLK_FREQ /  921_600;
 
-  constant BAUD_PERIOD_9600    : integer := CLK_FREQ / 9600;
-  constant BAUD_PERIOD_19200   : integer := CLK_FREQ / 19200;
-  constant BAUD_PERIOD_38400   : integer := CLK_FREQ / 38400;
-  constant BAUD_PERIOD_57600   : integer := CLK_FREQ / 57600;
-  constant BAUD_PERIOD_115200  : integer := CLK_FREQ / 115200;
-  constant BAUD_PERIOD_230400  : integer := CLK_FREQ / 230400;
-  constant BAUD_PERIOD_460800  : integer := CLK_FREQ / 460800;
-  constant BAUD_PERIOD_921600  : integer := CLK_FREQ / 921600;
+  constant C_SAMP_PERIOD_9600    : integer := G_CLK_FREQ / (  9_600 * G_OS_FACTOR);
+  constant C_SAMP_PERIOD_19200   : integer := G_CLK_FREQ / ( 19_200 * G_OS_FACTOR);
+  constant C_SAMP_PERIOD_38400   : integer := G_CLK_FREQ / ( 38_400 * G_OS_FACTOR);
+  constant C_SAMP_PERIOD_57600   : integer := G_CLK_FREQ / ( 57_600 * G_OS_FACTOR);
+  constant C_SAMP_PERIOD_115200  : integer := G_CLK_FREQ / (115_200 * G_OS_FACTOR);
+  constant C_SAMP_PERIOD_230400  : integer := G_CLK_FREQ / (230_400 * G_OS_FACTOR);
+  constant C_SAMP_PERIOD_460800  : integer := G_CLK_FREQ / (460_800 * G_OS_FACTOR);
+  constant C_SAMP_PERIOD_921600  : integer := G_CLK_FREQ / (921_600 * G_OS_FACTOR);
 
-  signal clk_cnt_i      : integer     := 0;
+  signal baud_counter_i : integer     := 0;
+  signal samp_counter_i : integer     := 0;
   signal baud_tick_i    : std_logic   := '0';
-  signal baud_period_i  : integer     := BAUD_PERIOD_9600;
-
+  signal samp_tick_i    : std_logic   := '0';
+  signal baud_period_i  : integer     := C_BAUD_PERIOD_9600;
+  signal samp_period_i  : integer     := C_SAMP_PERIOD_9600;
 
 begin
 
+  o_baud_tick   <= baud_tick_i and i_clk_en;
+  o_sample_tick <= samp_tick_i and i_clk_en;
 
-  baud_tick <= baud_tick_i and clk_en;
 
-
-  tick_gen_proc : process (clk)
+  baud_tick_proc : process (i_clk)
   begin
-    if rst_n = '0' then
-      clk_cnt_i   <= 0;
-      baud_tick_i <= '0';
-    elsif rising_edge(clk) then
-      if clk_cnt_i >= baud_period_i - 1 then
-        baud_tick_i <= '1';
-        clk_cnt_i   <= 0;
+    if rising_edge(i_clk) then
+      if i_rst_n = '0' then
+        baud_counter_i  <= 0;
+        baud_tick_i     <= '0';
       else
-        baud_tick_i <= '0';
-        clk_cnt_i   <= clk_cnt_i + 1;
+        if baud_counter_i >= baud_period_i - 1 then
+          baud_tick_i     <= '1';
+          baud_counter_i  <= 0;
+        else
+          baud_tick_i     <= '0';
+          baud_counter_i  <= baud_counter_i + 1;
+        end if;
       end if;
     end if;
   end process;
 
 
-  baud_sel_proc : process (clk)
+  samp_tick_proc : process (i_clk)
   begin
-    if rst_n = '0' then
-      baud_period_i <= BAUD_PERIOD_9600;
-    elsif rising_edge(clk) then
-      case baud_sel is
-        when "000"  => baud_period_i <= BAUD_PERIOD_9600;
-        when "001"  => baud_period_i <= BAUD_PERIOD_19200;
-        when "010"  => baud_period_i <= BAUD_PERIOD_38400;
-        when "011"  => baud_period_i <= BAUD_PERIOD_57600;
-        when "100"  => baud_period_i <= BAUD_PERIOD_115200;
-        when "101"  => baud_period_i <= BAUD_PERIOD_230400;
-        when "110"  => baud_period_i <= BAUD_PERIOD_460800;
-        when "111"  => baud_period_i <= BAUD_PERIOD_921600;
-        when others => baud_period_i <= BAUD_PERIOD_9600;
+    if rising_edge(i_clk) then
+      if i_rst_n = '0' then
+        samp_counter_i  <= 0;
+        samp_tick_i     <= '0';
+      else
+        if samp_counter_i >= samp_period_i - 1 then
+          samp_tick_i     <= '1';
+          samp_counter_i  <= 0;
+        else
+          samp_tick_i     <= '0';
+          samp_counter_i  <= samp_counter_i + 1;
+        end if;
+      end if;
+    end if;
+  end process;
+
+
+  baud_sel_proc : process (i_clk)
+  begin
+    if i_rst_n = '0' then
+      baud_period_i <= C_BAUD_PERIOD_9600;
+    elsif rising_edge(i_clk) then
+      case i_baud_sel is
+        when "000"  => baud_period_i <= C_BAUD_PERIOD_9600; 
+        when "001"  => baud_period_i <= C_BAUD_PERIOD_19200;
+        when "010"  => baud_period_i <= C_BAUD_PERIOD_38400;
+        when "011"  => baud_period_i <= C_BAUD_PERIOD_57600;
+        when "100"  => baud_period_i <= C_BAUD_PERIOD_115200;
+        when "101"  => baud_period_i <= C_BAUD_PERIOD_230400;
+        when "110"  => baud_period_i <= C_BAUD_PERIOD_460800;
+        when "111"  => baud_period_i <= C_BAUD_PERIOD_921600;
+        when others => baud_period_i <= C_BAUD_PERIOD_9600;
       end case;
     end if;
   end process;
 
+
+  samp_sel_proc : process (i_clk)
+  begin
+    if i_rst_n = '0' then
+      samp_period_i <= C_SAMP_PERIOD_9600;
+    elsif rising_edge(i_clk) then
+      case i_baud_sel is
+        when "000"  => samp_period_i <= C_SAMP_PERIOD_9600; 
+        when "001"  => samp_period_i <= C_SAMP_PERIOD_19200;
+        when "010"  => samp_period_i <= C_SAMP_PERIOD_38400;
+        when "011"  => samp_period_i <= C_SAMP_PERIOD_57600;
+        when "100"  => samp_period_i <= C_SAMP_PERIOD_115200;
+        when "101"  => samp_period_i <= C_SAMP_PERIOD_230400;
+        when "110"  => samp_period_i <= C_SAMP_PERIOD_460800;
+        when "111"  => samp_period_i <= C_SAMP_PERIOD_921600;
+        when others => samp_period_i <= C_SAMP_PERIOD_9600;
+      end case;
+    end if;
+  end process;
 
 end architecture Behavioral;
